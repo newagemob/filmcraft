@@ -22,6 +22,8 @@ filmcraft-platform = { workspace = true }
 egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11"] }
 serde_json = { workspace = true }
+# Per-launch control-channel token (control_auth.rs); already in the lockfile.
+getrandom = "0.3"
 log = { workspace = true }
 rfd = { workspace = true }
 cpal = "0.16"

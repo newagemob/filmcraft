@@ -23,6 +23,7 @@ mod app_nap;
 mod args;
 mod audio;
 mod audio_in;
+mod control_auth;
 mod control_server;
 #[cfg(target_os = "macos")]
 mod native_menu;
@@ -68,7 +69,8 @@ fn tell(text: &str, error: bool) {
 fn main() -> eframe::Result {
     // lossy, so a value that is not Unicode is reported like any other bad port instead of ignored
     let env_port = std::env::var_os("FILMCRAFT_CONTROL_PORT").map(|p| p.to_string_lossy().into_owned());
-    let Launch { control_port, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, std::env::args().skip(1)) {
+    let (control_rest, control_args) = control_auth::split_or_exit(std::env::args().skip(1));
+    let Launch { control_port, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, control_rest) {
         Ok(Cli::Run(l)) => l,
         Ok(Cli::Help) => {
             tell(args::USAGE, false);
@@ -107,6 +109,7 @@ fn main() -> eframe::Result {
         event_loop_builder: agent_event_loop(control_port.is_some()),
         ..Default::default()
     };
+    let control = control_auth::resolve_or_exit(control_port, &control_args);
     let started = eframe::run_native(
         "FilmCraft",
         options,
@@ -196,8 +199,8 @@ fn main() -> eframe::Result {
                 app.hooks.shortcuts_changed = Some(update);
                 app.ui.show_menu_bar = false;
             }
-            if let Some(port) = control_port {
-                let rx = control_server::start(port, cc.egui_ctx.clone());
+            if let Some((port, auth)) = control.clone() {
+                let rx = control_server::start(port, auth, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
             Ok(Box::new(app))

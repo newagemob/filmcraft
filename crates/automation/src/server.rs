@@ -177,6 +177,10 @@ impl FilmcraftMcp {
     pub fn bridge(addr: &str) -> Result<Self, AutomationError> {
         Ok(Self { backend: Arc::new(Backend::Bridge(Arc::new(BridgeClient::new(addr)?))), tool_router: Self::tool_router() })
     }
+    /// [`Self::bridge`] authenticating with `token` (see `crate::control_client`).
+    pub fn bridge_with_token(addr: &str, token: Option<String>) -> Result<Self, AutomationError> {
+        Ok(Self { backend: Arc::new(Backend::Bridge(Arc::new(BridgeClient::new(addr)?.with_token(token)))), tool_router: Self::tool_router() })
+    }
 
     pub async fn serve_stdio(self) -> Result<(), AutomationError> {
         self.serve_io(tokio::io::stdin(), tokio::io::stdout()).await

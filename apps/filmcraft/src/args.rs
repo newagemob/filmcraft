@@ -6,7 +6,14 @@ Usage: filmcraft [options] [project.fcproj | media files...]
 
 Options:
   --control <port>   start the localhost JSON-lines control server
-                     (also: FILMCRAFT_CONTROL_PORT)
+                     (also: FILMCRAFT_CONTROL_PORT; 0 = any free port)
+  --control-token <hex>, --control-token-file <path>
+                     the token clients must send first (default: a fresh
+                     one per launch, printed to stderr)
+  --control-port-file <path>
+                     write {port, token, pid} here once listening
+                     (default: $ORCHA_CONTROL_DIR/filmcraft.json)
+  --control-no-auth  serve the control channel without a token
   --demo             open the demo project
   --empty            start with an empty project
   --recover          recover the newest unsaved changes without asking

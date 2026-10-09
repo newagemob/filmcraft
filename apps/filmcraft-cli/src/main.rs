@@ -53,6 +53,9 @@ OPTIONS
   --save                        save the project back to --project when done
   --save-as <p.fcproj>          save the project to this path when done
   --bridge <127.0.0.1:PORT>     send commands to the running app (`filmcraft --control PORT`)
+  --control-token <hex>, --control-token-file <path>
+                                the app's control token (also FILMCRAFT_CONTROL_TOKEN[_FILE])
+  --control-port-file <path>    address and token of `filmcraft --control 0 --control-port-file <path>`
   --data-dir <dir>              FilmCraft data directory for user export presets (headless;
                                 default: the app's data directory)
   --keep-going                  `run`: report failing lines and continue
@@ -77,6 +80,17 @@ fn fail(msg: impl std::fmt::Display) -> ! {
     std::process::exit(1)
 }
 
+/// The control-channel client flags: `(address from --control-port-file, token)`. The token comes
+/// from `--control-token`, `--control-token-file`, the port file, or `FILMCRAFT_CONTROL_TOKEN[_FILE]`.
+fn control(a: &Args) -> (Option<String>, Option<String>) {
+    let c = filmcraft_automation::control_client::ControlClientArgs {
+        token: a.opt("--control-token").map(str::to_string),
+        token_file: a.opt("--control-token-file").map(std::path::PathBuf::from),
+        port_file: a.opt("--control-port-file").map(std::path::PathBuf::from),
+    };
+    c.resolve().unwrap_or_else(|e| usage(e))
+}
+
 /// Where commands go: an in-process session, or the desktop app's control channel.
 enum Backend {
     Local(Box<Session>),
@@ -85,11 +99,12 @@ enum Backend {
 
 impl Backend {
     fn open(a: &Args) -> Self {
-        if let Some(addr) = a.opt("--bridge") {
+        let (file_addr, token) = control(a);
+        if let Some(addr) = a.opt("--bridge").map(str::to_string).or(file_addr) {
             if a.opt("--project").is_some() || a.flag("--demo") {
                 usage("--bridge drives the running app; open projects there (exec file.open path=…)");
             }
-            return Backend::Bridge(BridgeClient::new(addr).unwrap_or_else(|e| usage(e)));
+            return Backend::Bridge(BridgeClient::new(&addr).unwrap_or_else(|e| usage(e)).with_token(token));
         }
         let mut s = Session::default();
         // user export presets (and other per-user libraries) from the data directory
@@ -366,8 +381,9 @@ async fn main() {
             eprintln!("rendered {}x{} in {:.1} ms → {out}", img.w, img.h, dt.as_secs_f64() * 1000.0);
         }
         "mcp" => {
-            let server = match a.opt("--bridge") {
-                Some(addr) => filmcraft_automation::FilmcraftMcp::bridge(addr).unwrap_or_else(|e| fail(e)),
+            let (file_addr, token) = control(&a);
+            let server = match a.opt("--bridge").map(str::to_string).or(file_addr) {
+                Some(addr) => filmcraft_automation::FilmcraftMcp::bridge_with_token(&addr, token).unwrap_or_else(|e| fail(e)),
                 None => match Backend::open(&a) {
                     Backend::Local(s) => filmcraft_automation::FilmcraftMcp::headless(*s),
                     Backend::Bridge(_) => usage("mcp: use --bridge ADDR to drive a running app"),

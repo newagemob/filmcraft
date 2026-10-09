@@ -19,6 +19,8 @@ pub struct BridgeClient {
     addr: String,
     conn: Mutex<Option<Conn>>,
     next_id: AtomicU64,
+    /// Sent as `auth {token}` on every new connection (see `crate::control_client`).
+    token: Option<String>,
 }
 
 impl BridgeClient {
@@ -29,7 +31,16 @@ impl BridgeClient {
         if !matches!(host, "127.0.0.1" | "localhost" | "[::1]" | "::1") {
             return Err(AutomationError::BadRequest(format!("bridge address must be loopback, got `{addr}`")));
         }
-        Ok(Self { addr, conn: Mutex::new(None), next_id: AtomicU64::new(1) })
+        let token = crate::control_client::token_from_env().map_err(AutomationError::BadRequest)?;
+        Ok(Self { addr, conn: Mutex::new(None), next_id: AtomicU64::new(1), token })
+    }
+
+    /// Authenticate with `token` (instead of `FILMCRAFT_CONTROL_TOKEN[_FILE]`).
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        if token.is_some() {
+            self.token = token;
+        }
+        self
     }
 
     /// Run engine command `id` in the app. A blocking export (`file.exportMedia` with
@@ -76,7 +87,11 @@ impl BridgeClient {
                     .map_err(|_| AutomationError::Bridge(format!("timed out connecting to {}", self.addr)))?
                     .map_err(|e| AutomationError::Bridge(format!("cannot connect to {} ({e}); start the app with `filmcraft --control <port>`", self.addr)))?;
                 let (r, w) = s.into_split();
-                *guard = Some((BufReader::new(r), w));
+                let (mut r, mut w) = (BufReader::new(r), w);
+                if let Some(token) = &self.token {
+                    authenticate(&mut r, &mut w, token).await.map_err(|e| AutomationError::Bridge(format!("{}: {e}", self.addr)))?;
+                }
+                *guard = Some((r, w));
             }
             let id = self.next_id.fetch_add(1, Ordering::Relaxed);
             let Some(conn) = guard.as_mut() else {
@@ -109,6 +124,20 @@ impl BridgeClient {
             }
         }
         Err(AutomationError::Bridge("unreachable".into()))
+    }
+}
+
+/// Send `auth {token}` and require `{"ok": true}`.
+async fn authenticate(r: &mut BufReader<tokio::net::tcp::OwnedReadHalf>, w: &mut tokio::net::tcp::OwnedWriteHalf, token: &str) -> Result<(), String> {
+    let line = format!("{}\n", json!({"id": 0, "method": "auth", "params": {"token": token}}));
+    w.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+    let mut buf = String::new();
+    tokio::time::timeout(Duration::from_secs(10), r.read_line(&mut buf)).await.map_err(|_| "no reply to auth".to_string())?.map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_str(buf.trim()).unwrap_or(Value::Null);
+    if v.get("ok").and_then(Value::as_bool) == Some(true) {
+        Ok(())
+    } else {
+        Err(format!("control channel refused the token: {}", v.get("error").and_then(Value::as_str).unwrap_or("no reply")))
     }
 }
 

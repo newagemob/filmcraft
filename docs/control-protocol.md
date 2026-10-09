@@ -147,3 +147,35 @@ Annotations, argument checking, errors and export progress / cancellation:
 [agents.md § Conventions](agents.md#conventions).
 
 Time is in ticks (254 016 000 000 per second); commands also accept `seconds`, `frame` or `timecode`.
+
+## Authentication and discovery
+
+The channel needs a per-launch token, with the same handshake as PhotoCraft's control port. The first
+request on every connection must be
+
+```text
+→ {"id": 0, "method": "auth", "params": {"token": "<64 hex characters>"}}
+← {"id": 0, "ok": true, "result": {"authenticated": true}}
+```
+
+Any other first request is answered `{"id": …, "ok": false, "error": "authentication required"}` and the
+connection is closed, so nothing runs on it.
+
+| Flag (environment variable) | Meaning |
+|---|---|
+| `--control <port>` (`FILMCRAFT_CONTROL_PORT`) | Listen on `127.0.0.1:<port>`; `0` picks a free port |
+| `--control-token <hex>` (`FILMCRAFT_CONTROL_TOKEN`) | Use this token (64 hex characters) instead of a fresh one |
+| `--control-token-file <path>` (`FILMCRAFT_CONTROL_TOKEN_FILE`) | Reuse the token in this file, or create it (owner-only) with a fresh one |
+| `--control-port-file <path>` (`FILMCRAFT_CONTROL_PORT_FILE`) | Once listening, write `{"port": <u16>, "token": "<hex>", "pid": <u32>}` here (owner-only) |
+| `$ORCHA_CONTROL_DIR` | Without `--control-port-file`, the port file is `$ORCHA_CONTROL_DIR/filmcraft.json` |
+| `--control-no-auth` (`FILMCRAFT_CONTROL_NO_AUTH=1`) | The old unauthenticated channel (explicit opt-in) |
+
+Without a token flag or a port file, the generated token is printed to standard error
+(`filmcraft: control token: …`). Clients (`filmcraft-cli`) take `--control-token`, `--control-token-file` (a
+bare token or a port file) or `--control-port-file` (address and token), or the same environment
+variables, and send `auth` on every new connection:
+
+```sh
+filmcraft --control 0 --control-port-file /tmp/filmcraft.json &
+filmcraft-cli mcp --control-port-file /tmp/filmcraft.json
+```
