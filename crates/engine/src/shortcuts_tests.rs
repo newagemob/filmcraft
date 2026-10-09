@@ -69,6 +69,11 @@ fn defaults_follow_the_registry_and_the_premiere_audit() {
     let list = s.execute("command.list", json!({})).unwrap();
     let ae = list.as_array().unwrap().iter().find(|c| c["id"] == "sequence.addEdit").unwrap();
     assert_eq!(ae["shortcut"], json!("Cmd+K"));
+    // ... and each command's journal flag (false = a read-only query)
+    assert_eq!(ae["journal"], json!(true));
+    let q = list.as_array().unwrap().iter().find(|c| c["id"] == "project.inspect").unwrap();
+    assert_eq!(q["journal"], json!(false));
+    assert!(list.as_array().unwrap().iter().all(|c| c["journal"].is_boolean()));
 }
 
 #[test]
